@@ -1,29 +1,98 @@
 <#
   Asset
     Edit
+    Validate
   Queries
     Run
     Edit
-  Scans
-    Edit
-    Run
-    Stop
-    Monitor
   Policy
-    Import
-    Export
-    Edit
-    Validate= BPG
+    Enumerate Policy Id
+    Import for big changes
+    Export for documentation
+    Edit for small changes
+    Compare <-> BPG with proof
+  Scans
+    Monitor either continually or on demand
+      Hook to email for start/status info?
+    Run scans
+    Stop scans
+    Import for big changes
+    Export for documentation
+    Edit for small changes
+    Compare <-> BPG with proof
   Report
-    Import
-    Export
-    Edit
-    Run
-    Stop
-    Download
-    Monitor
-    Validate = BPG
+    Monitor either continually or on demand
+      Hook to email for start/status info?
+    Run report
+    Stop report
+    Import for big changes
+    Export for monthly scans
+    Edit for small changes
+    Compare <-> BPG with proof
+
+  Tasks
+    Target Scan
+      Edit 'Target' asset
+      Validate policy, scan, and report
+      Execute scan and monitor
+      [opt] Run and download|email report
+      [opt] Run query
+    Inspection Check
+      Gather and format inspection controls (ACAS BPG and documentation)
+      Online
+        Get policy, scan, and report responses
+        Perform checks against controls and output results
+      Offline
+        Export policy, scan, and report definitions
+        Perform checks against controls and document results
+    View Plugins
+      ?
+    
+  Utility Scripts TODO:
+    Invoke-SCAxConsole
+
 #>
+<#function Test-SetCredential {
+  param(
+    [string]$Name,
+    [string]$Description,
+    [string]$Username,
+    [securestring]$PasswordInitial,
+    [securestring]$PasswordConfirm,
+      [validateset("snmp", "ssh", "windows")]
+    [string]$OSType,
+    [string]$AuthType = "password"
+    
+  )
+  if (!$Username) {
+    $Username = Read-Host "`n`tUsername "
+  }
+  while ($true) {
+    if (!$PasswordInitial) {
+      $PasswordInitial = Read-Host "`n`tPasswordInitial " -assecurestring
+    }
+    if (!$PasswordConfirm) {
+      $PasswordConfirm = Read-Host "`tPasswordConfirm " -assecurestring
+    }
+    try {
+      $Initial = $([system.runtime.interopservices.marshal]::ptrtostringauto( `
+        [system.runtime.interopservices.marshal]::securestringtobstr($PasswordInitial)))
+      $Confirm = $([system.runtime.interopservices.marshal]::ptrtostringauto( `
+        [system.runtime.interopservices.marshal]::securestringtobstr($PasswordConfirm)))
+      if ($Initial -ceq $Confirm) {
+        BREAK
+      }
+      $PasswordInitial = $null
+      $PasswordConfirm = $null
+      Write-Host "`n`tPasswords do not match. Try again..."
+    }
+    catch {
+      $_
+    }
+  }
+  Invoke-SCAx -resource '/credential' -method 'Post' -body 
+  
+}#>
 function Initialize-SCAx {
   [cmdletbinding()]
   param(
@@ -42,11 +111,11 @@ function Initialize-SCAx {
   )
   if ($Import -and (Test-Path -path $ImportPath -ea 'SilentlyContinue')) {
     $Json = Get-Content -path $ImportPath | ConvertFrom-Json
-    $Username = $Json.Username
-    $Password = ($Json.Password | ConvertTo-SecureString)
-    $ServerUri = $Json.ServerUri
-    if ($Json.ProxyUri) {
-      $ProxyUri = $Json.ProxyUri
+    $Username = $Json.SCAx.Username
+    $Password = ($Json.SCAx.Password | ConvertTo-SecureString)
+    $ServerUri = $Json.SCAx.ServerUri
+    if ($Json.SCAx.ProxyUri) {
+      $ProxyUri = $Json.SCAx.ProxyUri
     }
   }
   else {
@@ -147,7 +216,7 @@ function Connect-SCAx {
 function Invoke-SCAx {
   [cmdletbinding()]
   param(
-    [string]$Resource, #DynamicParameter? Pull from configs all the resources.
+    [string]$Resource, #DynamicParameter? Pull from configs potential the resources.
       [validateset('Delete', 'Get', 'Patch', 'Post')]
     [string]$Method,
     [string]$Body,
@@ -245,9 +314,31 @@ function Grant-Override {
     [system.net.securityprotocoltype]::ssl3
 }
 function ConvertFrom-UnixTime {
+  [cmdletbinding()]
   param(
-    $UnixTime,
-    $Format = 'ddMMMyy HH:mm:ss.f'
+      [parameter(valuefrompipeline=$true)]
+    [long]$UnixTime,
+    [string]$Format = 'ddMMMyy HH:mm:ss.f'
   )
-  RETURN ([datetime]::new('1970','1','1').addseconds($UnixTime).tostring($Format))
+  try {
+    $Return = ([datetime]::new('1970','1','1').addseconds($UnixTime).tostring($Format))
+  }
+  catch {
+    $_
+  }
+  RETURN $Return
+}
+function ConvertTo-UnixTime {
+  [cmdletbinding()]
+  param(
+      [parameter(valuefrompipeline=$true)]
+    [datetime]$DateTime
+  )
+  try {
+    $Return = (New-TimeSpan -start '1970-01-01 00:00:00' -end $DateTime).totalseconds
+  }
+  catch {
+    $_
+  }
+  RETURN $Return
 }

@@ -1,6 +1,16 @@
 {
-  "ServerUri":  "",
-  "ProxyUri":  "",
-  "Username":  "",
-  "Password":  ""
+  "SCAx":  {
+    "ServerUri":  "",
+    "ProxyUri":  "",
+    "Username":  "",
+    "Password":  ""
+  },
+  "Definitions":  {
+    "/credential":  {
+      "#ExampleJson":  "{\"name\":\"<name>\",\"tags\":\"\",\"description\":\"\",\"type\":\"ssh\",\"username\":\"<username>\",\"authtype\":\"password\",\"password\":\"<password(FromSecureString?)>\",\"privilegeEscalation\":\"<su|sudo>\",\"escalationUsername\":\"\",\"escalationPassword\":\"\",\"escalationPath\":\"\"}"
+    },
+    "/policy":  {},
+    "/query":  {},
+    "/report":  {}
+  }
 }
