@@ -93,6 +93,31 @@
   Invoke-SCAx -resource '/credential' -method 'Post' -body 
   
 }#>
+function Invoke-SCAxTargetScan {
+  [cmdletbinding()]
+  param(
+    $AssetID,
+    $ScanID,
+    $DefinedIPs
+  )
+  # Select > Confirm/Update Target Asset
+  if (!$AssetID) {
+    Invoke-SCAx -resource "/asset" -method 'Get'
+    Write-Host $_SCAx.Object.response.usable
+    $AssetID = Read-Host "Enter AssetID`n "
+  }
+  if (!$ScanID) {
+    Invoke-SCAx -resource "/scan" -method 'Get'
+    Write-Host $_SCAx.Object.response.usable
+    $ScanID = Read-Host "Enter ScanID`n "
+  }
+  if (!$DefinedIPs) {
+    $DefinedIPs = Read-Host "Enter DefinedIP(s)`n "
+  }
+  #Invoke-Console 
+  Invoke-SCAx -resource "/asset/$($AssetID)" -method 'Patch' -body "{definedIPs:$($DefinedIPs)}"
+  Invoke-SCAx -resource "/scan/$($ScanID)/launch" -method 'Post'
+}
 function Initialize-SCAx {
   [cmdletbinding()]
   param(
@@ -123,17 +148,17 @@ function Initialize-SCAx {
       Write-Warning "Incorrect Path: $($ImportPath)"
     }
     if (!$Username) {
-      $Username = (Read-Host "`tUsername ")
+      $Username = (Read-Host "Username`n ")
     }
     if (!$Password) {
-      $Password = (Read-Host "`tPassword " -assecurestring)
+      $Password = (Read-Host "Password`n " -assecurestring)
     }
     if (!$ServerUri) {
-      $ServerUri = (Read-Host "`tServerUri ")
+      $ServerUri = (Read-Host "ServerUri`n ")
     }
     if (!$ProxyUri) {
-      $ProxyUri = (Read-Host "`tProxyUri ")
-    }
+      $ProxyUri = (Read-Host "ProxyUri`n ")
+    };Clear
   }
   $Return = New-Object 'psobject' -property (@{
     SCAx = [ordered]@{
