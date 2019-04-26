@@ -29,7 +29,6 @@
     Export for monthly scans
     Edit for small changes
     Compare <-> BPG with proof
-
   Tasks
     Target Scan
       Edit 'Target' asset
@@ -47,11 +46,10 @@
         Perform checks against controls and document results
     View Plugins
       ?
-    
   Utility Scripts TODO:
     Invoke-SCAxConsole
-
 #>
+
 <#function Test-SetCredential {
   param(
     [string]$Name,
@@ -62,11 +60,12 @@
       [validateset("snmp", "ssh", "windows")]
     [string]$OSType,
     [string]$AuthType = "password"
-    
+
   )
   if (!$Username) {
     $Username = Read-Host "`n`tUsername "
   }
+
   while ($true) {
     if (!$PasswordInitial) {
       $PasswordInitial = Read-Host "`n`tPasswordInitial " -assecurestring
@@ -90,39 +89,17 @@
       $_
     }
   }
-  Invoke-SCAx -resource '/credential' -method 'Post' -body 
-  
+  Invoke-SCAx -resource '/credential' -method 'Post' -body
+  Invoke-SCAx '/analysis' Post -body '{"type":"vuln","query":{"id":"17239"},"sourceType":"cumulative"}' "WVS Metrics All" -> C,H,M,L
+  Invoke-SCAx '/analysis' Post -body '{"type":"vuln","query":{"id":"17240"},"sourceType":"cumulative"}' "Failed Credential/No Registry Access" -> Count
+  Invoke-SCAx '/analysis' Post -body '{"type":"vuln","query":{"id":"17241"},"sourceType":"cumulative"}' "Nessus Scan Details" -> Count
+  Invoke-SCAx '/analysis' Post -body '{"type":"vuln","query":{"id":"17242"},"sourceType":"cumulative"}' "WVS Metrics 30+" -> 'C','H','M','L'
 }#>
-function Invoke-SCAxTargetScan {
-  [cmdletbinding()]
-  param(
-    $AssetID,
-    $ScanID,
-    $DefinedIPs
-  )
-  # Select > Confirm/Update Target Asset
-  if (!$AssetID) {
-    Invoke-SCAx -resource "/asset" -method 'Get'
-    Write-Host $_SCAx.Object.response.usable
-    $AssetID = Read-Host "Enter AssetID`n "
-  }
-  if (!$ScanID) {
-    Invoke-SCAx -resource "/scan" -method 'Get'
-    Write-Host $_SCAx.Object.response.usable
-    $ScanID = Read-Host "Enter ScanID`n "
-  }
-  if (!$DefinedIPs) {
-    $DefinedIPs = Read-Host "Enter DefinedIP(s)`n "
-  }
-  #Invoke-Console 
-  Invoke-SCAx -resource "/asset/$($AssetID)" -method 'Patch' -body "{definedIPs:$($DefinedIPs)}"
-  Invoke-SCAx -resource "/scan/$($ScanID)/launch" -method 'Post'
-}
 function Initialize-SCAx {
   [cmdletbinding()]
   param(
       [parameter(valuefrompipelinebypropertyname=$true)]
-    [string]$Username,
+    [string]$UserName,
       [parameter(valuefrompipelinebypropertyname=$true)]
     [securestring]$Password,
       [parameter(valuefrompipelinebypropertyname=$true)]
@@ -131,6 +108,8 @@ function Initialize-SCAx {
     [string]$ProxyUri,
     [switch]$Import,
     [string]$ImportPath = "$($PSScriptRoot)\SCAx.json",
+      [alias('Block')]
+    [switch]$BlockPolicyOverride,
       [alias('SV')]
     [switch]$SetVariable
   )
@@ -148,17 +127,20 @@ function Initialize-SCAx {
       Write-Warning "Incorrect Path: $($ImportPath)"
     }
     if (!$Username) {
-      $Username = (Read-Host "Username`n ")
+      $Username = (Read-Host "Username`n")
     }
     if (!$Password) {
-      $Password = (Read-Host "Password`n " -assecurestring)
+      $Password = (Read-Host "Password`n" -assecurestring)
     }
     if (!$ServerUri) {
-      $ServerUri = (Read-Host "ServerUri`n ")
+      $ServerUri = (Read-Host "ServerUri`n")
     }
     if (!$ProxyUri) {
-      $ProxyUri = (Read-Host "ProxyUri`n ")
-    };Clear
+      $ProxyUri = (Read-Host "ProxyUri`n")
+    }
+  }
+  if (!$BlockPolicyOverride) {
+    Grant-PolicyOverride
   }
   $Return = New-Object 'psobject' -property (@{
     SCAx = [ordered]@{
@@ -187,7 +169,7 @@ function Connect-SCAx {
     [psobject]$SCAx
   )
   if ($global:_SCAx) {
-    $SCAx = $_SCAx
+    $SCAx = $global:_SCAx
   }
   elseif ($MyInvocation.BoundParameters -contains 'SCAx') {
     #Nothing...
@@ -227,6 +209,8 @@ function Connect-SCAx {
     Write-Warning 'Failure: No Token returned.'
   }
   else {
+    Write-Host "[+]" -fore 'Black' -back 'DarkGreen' -nonewline
+    Write-Host " SCAx - Connected" -fore 'DarkGreen'
     $SCAx.Token = $Token
     $SCAx.Session = $Session
     $SCAx.Status = 'Authenticated'
@@ -247,6 +231,7 @@ function Invoke-SCAx {
     [string]$Body,
     [string]$InFile,
     [string]$OutFile,
+    [switch]$Passthru,
       [parameter(valuefrompipelinebypropertyname=$true)]
       [validatenotnullorempty()]
     [psobject]$SCAx
@@ -308,12 +293,15 @@ function Invoke-SCAx {
   }
   if ($global:_SCAx) {
     $global:_SCAx = $SCAx
+    if ($Passthru) {
+      RETURN $SCAx.Object
+    }
   }
   else {
     RETURN (New-Object 'psobject' -property @{'SCAx' = $SCAx})
   }
 }
-function Grant-Override {
+function Grant-PolicyOverride {
   if (!([system.management.automation.pstypename]'trustallcertspolicy').type) {
     Add-Type @"
       using System.Net;
@@ -366,4 +354,40 @@ function ConvertTo-UnixTime {
     $_
   }
   RETURN $Return
+}
+function Load-Json {
+  param(
+    [string]$Path
+  )
+  try {
+    $Json = Get-Content -path $Path | ConvertFrom-Json
+    [string]$Json = $Json | ConvertTo-Json -depth 100 -compress
+  }
+  catch {
+    $_
+  }
+  RETURN $Json
+}
+function Resolve-SCAxWVS {
+  $Props = New-Object 'system.collections.specialized.ordereddictionary'
+  $Splat = @{
+    Resource = '/analysis'
+    Method = 'Post'
+    Body = '{"type":"vuln","query":{"id":"17242"},"sourceType":"cumulative"}'
+    Passthru = $true
+  }
+  (Invoke-SCAx @Splat).response.results `
+    | Measure-Object -Property 'severityCritical' , 'severityHigh', 'severityMedium', 'severityLow' -sum `
+    | foreach {
+      $Props.add($_.Property.trimstart('severity'), $_.Sum)
+    }
+  $Splat.Body = '{"type":"vuln","query":{"id":"17241"},"sourceType":"cumulative"}'
+  $FailedCount = (Invoke-SCAx @Splat).response.results.count
+  $Props.add('Failed', $FailedCount)
+  $Splat.Body = '{"type":"vuln","query":{"id":"17240"},"sourceType":"cumulative"}'
+  $TotalCount = (Invoke-SCAx @Splat).response.results.count
+  $Props.add('Total', $TotalCount)
+  $WVS = [math]::round((((($Props.Critical + $Props.High) * 10) + ($Props.Medium * 4) + $Props.Low) / 15) / ($Props.Total - $Props.Failed), 2)
+  $Props.add('WVS', $WVS)
+  RETURN (New-Object 'psobject' -property $Props)
 }
