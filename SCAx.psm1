@@ -110,8 +110,8 @@ function Initialize-SCAx {
     [string]$ImportPath = "$($PSScriptRoot)\SCAx.json",
       [alias('Block')]
     [switch]$BlockPolicyOverride,
-      [alias('SV')]
-    [switch]$SetVariable
+    [switch]$Passthru,
+    [switch]$Connect
   )
   if ($Import -and (Test-Path -path $ImportPath -ea 'SilentlyContinue')) {
     $Json = Get-Content -path $ImportPath | ConvertFrom-Json
@@ -154,7 +154,13 @@ function Initialize-SCAx {
       Object = $null
     }
   })
-  if ($SetVariable) {
+  if ($Connect) {
+    $Splat = @{
+      Passthru = $Passthru
+    }
+    Connect-SCAx -scax $Return.SCAx @Splat
+  }
+  elseif (!$Passthru) {
     $global:_SCAx = $Return.SCAx
   }
   else {
@@ -166,12 +172,13 @@ function Connect-SCAx {
   param(
       [parameter(valuefrompipelinebypropertyname=$true)]
       [validatenotnullorempty()]
-    [psobject]$SCAx
+    [psobject]$SCAx,
+    [switch]$Passthru
   )
   if ($global:_SCAx) {
     $SCAx = $global:_SCAx
   }
-  elseif ($MyInvocation.BoundParameters -contains 'SCAx') {
+  elseif ($SCAx) {
     #Nothing...
   }
   else {
@@ -215,7 +222,7 @@ function Connect-SCAx {
     $SCAx.Session = $Session
     $SCAx.Status = 'Authenticated'
   }
-  if ($global:_SCAx) {
+  if ($global:_SCAx -or !$Passthru) {
     $global:_SCAx = $SCAx
   }
   else {
@@ -231,15 +238,15 @@ function Invoke-SCAx {
     [string]$Body,
     [string]$InFile,
     [string]$OutFile,
-    [switch]$Passthru,
       [parameter(valuefrompipelinebypropertyname=$true)]
       [validatenotnullorempty()]
-    [psobject]$SCAx
+    [psobject]$SCAx,
+    [switch]$Passthru
   )
   if ($global:_SCAx) {
     $SCAx = $_SCAx
   }
-  elseif ($MyInvocation.BoundParameters -contains 'SCAx') {
+  elseif ($SCAx) {
     #Nothing...
   }
   else {
@@ -293,9 +300,9 @@ function Invoke-SCAx {
   }
   if ($global:_SCAx) {
     $global:_SCAx = $SCAx
-    if ($Passthru) {
-      RETURN $SCAx.Object
-    }
+  }
+  elseif (!$global:_SCAx -and $Passthru) {
+    RETURN (New-Object 'psobject' -property @{'SCAx' = $SCAx})
   }
   else {
     RETURN (New-Object 'psobject' -property @{'SCAx' = $SCAx})
@@ -331,7 +338,7 @@ function ConvertFrom-UnixTime {
   param(
       [parameter(valuefrompipeline=$true)]
     [long]$UnixTime,
-    [string]$Format = 'ddMMMyy HH:mm:ss.f'
+    [string]$Format = 'ddMMMyy HH:mm:ss'
   )
   try {
     $Return = ([datetime]::new('1970','1','1').addseconds($UnixTime).tostring($Format))
@@ -355,7 +362,7 @@ function ConvertTo-UnixTime {
   }
   RETURN $Return
 }
-function Load-Json {
+function Show-Json {
   param(
     [string]$Path
   )
