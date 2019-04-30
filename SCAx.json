@@ -5,10 +5,22 @@
     "Username":  "",
     "Password":  ""
   },
+  "Configurations":  {
+    "Query":  [
+      {
+        "Name":  "All Vulnerabilities",
+        "Json":  "{\"name\":\"All Vuln Count\",\"description\":\"[SCAx] Grabs the same numbers used in the Executive Report Column 1\",\"type\":\"vuln\",\"tool\":\"sumip\",\"filters\":[{\"filterName\":\"acceptRiskStatus\",\"operator\":\"=\",\"value\":\"all\"},{\"filterName\":\"asset\",\"operator\":\"=\",\"value\":{\"id\":\"1\",\"name\":\"Ellsworth Dynamic (USE FOR VULNERABLILITY/COMPLIANCE)\"}},{\"filterName\":\"lastSeen\",\"operator\":\"=\",\"value\":\"00:4\"},{\"filterName\":\"pluginPublished\",\"operator\":\"=\",\"value\":\"30:all\"},{\"filterName\":\"pluginType\",\"operator\":\"=\",\"value\":\"active\"},{\"filterName\":\"repository\",\"operator\":\"=\",\"value\":[{\"id\":\"79\"}]},{\"filterName\":\"severity\",\"operator\":\"=\",\"value\":\"1,2,3,4\"}]}"
+      }
+    ],
+    "Scan":  [
+      {
+        "Name":  "Default Scan",
+        "ID":  "0"
+      }
+    ]
+  },
   "Definitions":  {
-    "/credential":  {
-      "#ExampleJson":  "{\"name\":\"<name>\",\"tags\":\"\",\"description\":\"\",\"type\":\"ssh\",\"username\":\"<username>\",\"authtype\":\"password\",\"password\":\"<password(FromSecureString?)>\",\"privilegeEscalation\":\"<su|sudo>\",\"escalationUsername\":\"\",\"escalationPassword\":\"\",\"escalationPath\":\"\"}"
-    },
+    "/credential":  {},
     "/policy":  {},
     "/query":  {},
     "/report":  {}
