@@ -48,6 +48,12 @@
       ?
   Utility Scripts TODO:
     Invoke-SCAxConsole
+    <#
+    $yes = New-Object System.Management.Automation.Host.ChoiceDescription '&Yes', 'Allows setting a delay'
+    $no = New-Object System.Management.Automation.Host.ChoiceDescription '&No', 'Does not allow setting a delay'
+    $options = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)
+    $result = $host.ui.PromptForChoice('Set Delay?', 'Would you like to set a delay?', $options, 0)
+  #>
 #>
 
 <#function Test-SetCredential {
@@ -148,6 +154,7 @@ function Initialize-SCAx {
       Password = $Password
       ServerUri = $ServerUri
       ProxyUri = $ProxyUri
+      Json = $Json
       Status = 'NotAuthenticated'
       Token = $null
       Session = $null
@@ -300,9 +307,9 @@ function Invoke-SCAx {
   }
   if ($global:_SCAx) {
     $global:_SCAx = $SCAx
-  }
-  elseif (!$global:_SCAx -and $Passthru) {
-    RETURN (New-Object 'psobject' -property @{'SCAx' = $SCAx})
+    if ($Passthru) {
+      RETURN (New-Object 'psobject' -property @{'SCAx' = $SCAx})
+    }
   }
   else {
     RETURN (New-Object 'psobject' -property @{'SCAx' = $SCAx})
@@ -341,7 +348,7 @@ function ConvertFrom-UnixTime {
     [string]$Format = 'ddMMMyy HH:mm:ss'
   )
   try {
-    $Return = ([datetime]::new('1970','1','1').addseconds($UnixTime).tostring($Format))
+    $Return = ([datetime]::new('1970','1','1').addSeconds($UnixTime).toString($Format))
   }
   catch {
     $_
@@ -355,7 +362,7 @@ function ConvertTo-UnixTime {
     [datetime]$DateTime
   )
   try {
-    $Return = (New-TimeSpan -start '1970-01-01 00:00:00' -end $DateTime).totalseconds
+    $Return = (New-TimeSpan -start '1970-01-01 00:00:00' -end $DateTime).totalSeconds
   }
   catch {
     $_
@@ -397,4 +404,79 @@ function Resolve-SCAxWVS {
   $WVS = [math]::round((((($Props.Critical + $Props.High) * 10) + ($Props.Medium * 4) + $Props.Low) / 15) / ($Props.Total - $Props.Failed), 2)
   $Props.add('WVS', $WVS)
   RETURN (New-Object 'psobject' -property $Props)
+}
+function Get-SCAxScanSchedule {
+  param(
+    [switch]$All
+  )
+  $Splat = @{
+    Resource = '/scan'
+    Method = 'Get'
+    Passthru = $true
+  }
+  $Return = New-Object 'system.collections.arraylist'
+  $Ids = New-Object 'system.collections.arraylist'
+  $Ids = (Invoke-SCAx @Splat).SCAx.Object.response.usable.id
+  if (!$All) {
+    $Ids = $Ids -match "$($_SCAx.Json.Configurations.Scan.Id -join '|')"
+  }
+  foreach ($Id in $Ids) {
+    $Splat.Resource = "/scan/$($Id)"
+    $Scan = (Invoke-SCAx @Splat).SCAx.Object.response
+    $Props = New-Object 'system.collections.specialized.ordereddictionary'
+    $Props.add('Id', $Id)
+    $Props.add('Name', $Scan.name)
+    $Props.add('Type', $Scan.schedule.type)
+    $Props.add('ScheduleRule', $Scan.schedule.repeatRule)
+    $Props.add('ScheduleTime', (ConvertFrom-UnixTime $Scan.schedule.nextRun))
+    $Return.add((New-Object 'psobject' -property $Props)) | Out-Null
+  }
+  RETURN $Return
+}
+function Start-SCAxTargetScan {
+  <#
+    Validate Policy, Repository, Scan, etc
+    Set asset
+    Start scan
+    Opt. Monitor scan for completion
+  #>
+  [cmdletbinding()]
+  param(
+    [string]$IpRange,
+    [string]$ScanId,
+      [validateset('Id', 'Name')]
+      [parameter(parametersetname='Search')]
+    [string]$SearchBy,
+      [parameter(parametersetname='Search')]
+    [string]$Search,
+    [psobject]$SCAx
+  )
+  if ($global:_SCAx) {
+    $SCAx = $global:_SCAx
+  }
+  $Splat = @{
+    Resource = '/scan'
+    Method = 'Get'
+    Passthru = $true
+  }
+  if ($SearchById -and $SCAx) {
+    $Splat.Resource = $Splat.Resource + ($SCAx.Configurations.Scan `
+      | Where-Object 'Id' -match $SearchById)
+  }
+  elseif ($SearchByName -and $SCAx) {
+    $Splat.Resource = $Splat.Resource + ($SCAx.Configurations.Scan `
+      | Where-Object 'Name' -match $SearchByName)
+  }
+  $Scan = (Invoke-SCAx @Splat).SCAx.Object.response
+  $Props = New-Object 'system.collections.specialized.ordereddictionary'
+  $Props.add('Id', $Scan.id)
+  $Props.add('Name', $Scan.name)
+  $Props.add('Description', $Scan.description)
+  $Props.add('Status', $Scan.status)
+  $Props.add('Assets', $Scan.assets.name)
+  $Props.add('Credentials', $Scan.credentials.name)
+  $Props.add('Policy', $Scan.policy.name)
+  $Props.add('Repository', $Scan.repository.name)
+  Write-Host (New-Object 'psobject' -property $Props | Out-String)
+  $Read = Read-Host "<enter> to Continue or <ctrl-c> to Cancel`n "
 }
