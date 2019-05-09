@@ -347,8 +347,10 @@ function ConvertFrom-UnixTime {
     [long]$UnixTime,
     [string]$Format = 'ddMMMyy HH:mm:ss'
   )
-  try {
-    $Return = ([datetime]::new('1970','1','1').addSeconds($UnixTime).toString($Format))
+  try { 
+    $Return = [system.timezoneinfo]::convertTimeFromUtc(
+    	([datetime]::new('1970','1','1').addSeconds($UnixTime)), [system.timezoneinfo]::Local
+    ).toString($Format)
   }
   catch {
     $_
@@ -362,7 +364,7 @@ function ConvertTo-UnixTime {
     [datetime]$DateTime
   )
   try {
-    $Return = (New-TimeSpan -start '1970-01-01 00:00:00' -end $DateTime).totalSeconds
+    $Return = [math]::round((New-TimeSpan -start '1970-01-01 00:00:00' -end $DateTime.toUniversalTime()).totalSeconds, 0)
   }
   catch {
     $_
@@ -433,6 +435,38 @@ function Get-SCAxScanSchedule {
   }
   RETURN $Return
 }
+function Get-SCAxScanResults {
+	<#
+		List all Scans with relevent info.
+	#>
+	[cmdletbinding()]
+	param()
+	$Splat = @{
+		Resource = '/scanResult?fields=name,status,errorDetails,startTime,finishTime,completedChecks,totalChecks,scanDuration'
+		Method = 'Get'
+		Passthru = $true
+	}
+	$Return = New-Object 'system.collections.arraylist'
+	$Scans = (Invoke-SCAx @Splat).SCAx.Object.response.usable
+	Write-Debug ($Scans | Format-Table | Out-String)
+	foreach ($Scan in $Scans.getenumerator()) {
+		$Props = New-Object 'system.collections.specialized.ordereddictionary'
+		$Props.add('Id', $Scan.id)
+		$Props.add('Name', $Scan.name)
+		$Props.add('Status', $Scan.status)
+		$Props.add('StartTime', (ConvertFrom-UnixTime -unixTime $Scan.startTime))
+		$Props.add('RunTime', ([timespan]::fromSeconds($Scan.scanDuration).toString()))
+		if ($Scan.completedChecks -and $Scan.totalChecks) {
+			$Percentage = ([math]::round(($Scan.completedChecks/$Scan.totalChecks)*100, 2))
+		}
+		else {
+			$Percentage = 0
+		}
+		$Props.add('Percent', $Percentage)
+		$Return.add((New-Object 'psobject' -property $Props)) | Out-Null
+	}
+	RETURN $Return
+}
 function Start-SCAxTargetScan {
   <#
     Validate Policy, Repository, Scan, etc
@@ -443,12 +477,10 @@ function Start-SCAxTargetScan {
   [cmdletbinding()]
   param(
     [string]$IpRange,
+    [string]$AssetId,
+    [string]$PolicyId,
     [string]$ScanId,
-      [validateset('Id', 'Name')]
-      [parameter(parametersetname='Search')]
-    [string]$SearchBy,
-      [parameter(parametersetname='Search')]
-    [string]$Search,
+    [string]$SearchByName,
     [psobject]$SCAx
   )
   if ($global:_SCAx) {
@@ -459,13 +491,21 @@ function Start-SCAxTargetScan {
     Method = 'Get'
     Passthru = $true
   }
-  if ($SearchById -and $SCAx) {
-    $Splat.Resource = $Splat.Resource + ($SCAx.Configurations.Scan `
-      | Where-Object 'Id' -match $SearchById)
+  if ($SearchByName -and $SCAx) {
+    $Splat.Resource = $Splat.Resource + "/" + ($SCAx.Json.Configurations.Scan `
+      | Where-Object 'Name' -match $SearchByName).Id
   }
-  elseif ($SearchByName -and $SCAx) {
-    $Splat.Resource = $Splat.Resource + ($SCAx.Configurations.Scan `
-      | Where-Object 'Name' -match $SearchByName)
+  elseif ($SearchByName) {
+    $Splat.Resource = '/scan'
+    $Splat.Resource = $Splat.Resource + "/" + ((Invoke-SCAx @Splat).SCAx.Object.response.usable `
+      | Where-Object 'Name' -match $SearchByName).Id
+  }
+  elseif ($ScanId) {
+    $Splat.Resource = $Splat.Resource + "/" + $ScanId
+  }
+  else {
+    Write-Warning "No Scan Found"
+    RETURN
   }
   $Scan = (Invoke-SCAx @Splat).SCAx.Object.response
   $Props = New-Object 'system.collections.specialized.ordereddictionary'
@@ -479,4 +519,28 @@ function Start-SCAxTargetScan {
   $Props.add('Repository', $Scan.repository.name)
   Write-Host (New-Object 'psobject' -property $Props | Out-String)
   $Read = Read-Host "<enter> to Continue or <ctrl-c> to Cancel`n "
+
+  $Splat.Resource = "/asset/$($Id)"
+  $Splat.Method = 'Patch'
+
+  $Body = @{
+    "DefinedIPs" = $IpRange
+  }
+  $Splat = @{
+    Resource = "/asset/$($AssetId)"
+    Method = 'Patch'
+    Body = ($Body | ConvertTo-Json -depth 100 -compress)
+    Passthru = $true
+  }
+  $Return = (Invoke-SCAx @Splat).Object.response
+}
+function Set-SCAxScanMonitor {
+  <#
+    #Get ScanId
+    #Set Timer to check scan progress.
+      *Check Scan Progress = Seperate Script.
+  #>
+
+  $Timer = New-Object 'timers.timer'
+  $Timer.Interval = 30000 #30 Seconds
 }
