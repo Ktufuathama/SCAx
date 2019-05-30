@@ -5,4 +5,3 @@ SCAx is an API wrapper for the SecurityCenter API. Built with automation and ins
 
 ...
 ### Contact: _Caleb Worthington_ [(Ktufuathama)](https://github.com/Ktufuathama/)
-
